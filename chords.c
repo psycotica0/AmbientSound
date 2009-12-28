@@ -91,6 +91,7 @@ void populate(void* data, Uint8* stream, int len) {
 	int i, n;
 	int activeInstruments;
 	long tempTotal;
+	int tempVolume;
 	instrument* currentInstrument;
 	instrument* instruments = (instrument*)data;
 	for(i=0; i<len; i++) {
@@ -101,7 +102,17 @@ void populate(void* data, Uint8* stream, int len) {
 			currentInstrument = instruments + n;
 			if (currentInstrument->position > 0) {
 				/* This one is currently making sound */
-				tempTotal += currentInstrument->volume * sinf(currentInstrument->freqRate * currentInstrument->position);
+				if ((float)currentInstrument->position / currentInstrument->duration < 0.25) {
+					/* In the first quarter, fading in */
+					tempVolume = (((float)currentInstrument->position / currentInstrument->duration) * 4) * currentInstrument->volume;
+				} else if ((float)currentInstrument->position / currentInstrument->duration > 0.75) {
+					/* Last quarter, fading out */
+					tempVolume = ((1 - ((float)currentInstrument->position / currentInstrument->duration)) * 4) * currentInstrument->volume;
+				} else {
+					/* Anywhere else, full volume */
+					tempVolume = currentInstrument->volume;
+				}
+				tempTotal += tempVolume * sinf(currentInstrument->freqRate * currentInstrument->position);
 				activeInstruments++;
 			}
 			currentInstrument->position++;
