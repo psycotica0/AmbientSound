@@ -187,15 +187,11 @@ void populate(void* data, Uint8* stream, int len) {
 		tempTotal = 0;
 		for (n=0; n<numActiveInstruments; n++) {
 			currentInstrument = activeInstruments[n];
-			tempTotal += currentVolume(currentInstrument, beat_position, beat_length) * sinf(currentInstrument->freqRate * currentInstrument->position);
+			tempTotal += (currentVolume(currentInstrument, beat_position, beat_length) / numActiveInstruments) * sinf(currentInstrument->freqRate * currentInstrument->position);
 			currentInstrument->position++;
 			currentInstrument->position %= currentInstrument->period;
 		}
-		if (numActiveInstruments > 0) {
-			*stream = (Uint8) ((tempTotal / numActiveInstruments) + 127);
-		} else {
-			*stream = 127;
-		}
+		*stream = (Uint8) (tempTotal + 127);
 		stream++;
 
 		beat_position++;
