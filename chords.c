@@ -10,23 +10,44 @@
 #define DEBUG 0
 
 #define NUM_INSTRUMENTS 3
-#define LOWER_DURATION FREQUENCY*2
-#define UPPER_DURATION FREQUENCY*7
-#define LOWER_POSITION 0
-#define UPPER_POSITION -FREQUENCY*6
+/* This is the number of beats every minute */
+#define TEMPO 60
+
+/* All positions and durations are in term of beats */
+#define LOWER_START_BEAT 0
+#define UPPER_START_BEAT 6
+#define LOWER_DURATION 2
+#define UPPER_DURATION 10
+
 #define MAX_VOLUME 127
 #define MIN_VOLUME 0
 
 /* This holds each instrument */
 typedef struct instrument {
 	float freqRate; /* This represents the frequency, it is what the position means. 2*PI*(freq/sampleFreq) */
-	long duration; /* This is the point at which an instrument will change */
-	long position; /* This is where in the note we are */
+	long position; /* This is where in the note's wave we are measured in 'ticks' */
+	int period; /* This is the period of the wave measured in 'ticks' */
+
+	/* The arrangment of notes is done in terms of beats */
+	/* At the end of a beat, the song doesn't really move forward a beat, it's just that every event moves closer a beat */
+	/* So, if some event has a value of 2, that means that event will occur in 2 beats. */
+	/* At the end of this beat, that number will be reduced to 1. This means next beat, the event will occur */
+	/* At the end of the next beat the number will be reduced to 0, meaning this event is occuring this beat */
+	/* After this beat it will again be reduced to -1, meaning the event occured last beat. */
+	/* So, if start_beat is <=0 then the note is playing */
+	/* If end_beat is <0, then this note is done, and another one should be generated. */
+	int start_beat; /* This is when this instrument starts. A */
+	int end_beat;
+
 	int volume; /* This is what the volume of the note is */
 } instrument;
 
 float freqToFreqRate(float freq) {
 	return ((2 * M_PI * freq) / FREQUENCY);
+}
+
+float freqToPeriod(float freq) {
+	return (FREQUENCY / freq);
 }
 
 /* This function takes in the current instrument and makes the next tone for it to play */
@@ -71,61 +92,134 @@ void generateTone(instrument* currentInstrument) {
 		523.25, /* C5 */
 	};
 	const static int numFreqs = sizeof(freqs) / sizeof(float);
-	const static int durationMod = (UPPER_DURATION-LOWER_DURATION)>0? (UPPER_DURATION-LOWER_DURATION): -(UPPER_DURATION-LOWER_DURATION);
-	const static int durationSign = (UPPER_DURATION-LOWER_DURATION)>0? 1: -1;
-	const static int positionMod = (UPPER_POSITION-LOWER_POSITION)>0? (UPPER_POSITION-LOWER_POSITION): -(UPPER_POSITION-LOWER_POSITION);
-	const static int positionSign = (UPPER_POSITION-LOWER_POSITION)>0? 1: -1;
+	float tempFreq;
 
-	currentInstrument->duration = durationSign * (random() % durationMod) + LOWER_DURATION;
-	currentInstrument->position = positionSign * (random() % positionMod) + LOWER_POSITION;
+	currentInstrument->start_beat = (random() % (UPPER_START_BEAT - LOWER_START_BEAT)) + LOWER_START_BEAT;
+	currentInstrument->end_beat = currentInstrument->start_beat + (random() % (UPPER_DURATION - LOWER_DURATION)) + LOWER_DURATION;
 	currentInstrument->volume = MAX_VOLUME;
-	/* Generate Random Frequency */
-	currentInstrument->freqRate = freqToFreqRate(freqs[random() % numFreqs]);
+	/* Generate Random Frequency and Period */
+	tempFreq = freqs[random() % numFreqs];
+	currentInstrument->freqRate = freqToFreqRate(tempFreq);
+	currentInstrument->period = freqToPeriod(tempFreq);
 
 	if (DEBUG) {
-		printf("Generated Instrument\nDuration: %d\nPosition: %d\nfreq%f\nfreqRate%f\n-------\n", currentInstrument->duration/FREQUENCY, currentInstrument->position/FREQUENCY, (FREQUENCY*currentInstrument->freqRate)/(2*M_PI),currentInstrument->freqRate);
+		printf("Generated Instrument:\nfreq: %f\nstart_beat: %d\nend_beat: %d\n", tempFreq, currentInstrument->start_beat, currentInstrument->end_beat);
 	}
 }
 
+/* This function goes through the list of instruments and moves each one closer to now */
+void nextBeat(instrument* instruments) {
+	int n;
+	instrument* currentInstrument;
+	for (n=0; n<NUM_INSTRUMENTS; n++) {
+		currentInstrument = instruments + n;
+		currentInstrument->start_beat--;
+		currentInstrument->end_beat--;
+	}
+	if (DEBUG) {
+		puts("Next Beat");
+	}
+}
+
+/* This function returns whether or not an instrument is active (Making a sound this beat) */
+int isActive(instrument* instr) {
+	return (instr->start_beat <=0 && instr->end_beat>=0);
+}
+
+/* This function returns whether or not an instrument is finished playing */
+int isFinished(instrument* instr) {
+	return (instr->end_beat<0);
+}
+
+/* These functions takes in the current beat position and the total beat length and returns the volume the tone should be at that point */
+float fadeInVolume(long currentPos, long totalPos) {
+	return (((float)currentPos) / totalPos);
+}
+
+float fadeOutVolume(long currentPos, long totalPos) {
+	return 1 - (((float)currentPos) / totalPos);
+}
+
+/* This function returns the appropriate volume for the given instrument */
+float currentVolume(instrument* currentInstrument, long currentPos, long totalPos) {
+	if (currentInstrument->start_beat == 0) {
+		/* We've just started on this beat, should be fading in */
+		if (DEBUG) {
+			puts("Fading In");
+		}
+		return fadeInVolume(currentPos, totalPos) * currentInstrument->volume;
+	} else if (currentInstrument->end_beat == 0) {
+		/* We're ending this beat, should be fading out */
+		if (DEBUG) {
+			puts("Fading Out");
+		}
+		return fadeOutVolume(currentPos, totalPos) * currentInstrument->volume;
+	} else {
+		return currentInstrument->volume;
+	}
+}
+
+long beat_position; /* This is where we are in a given beat. */
+long beat_length; /* This is how many 'ticks' a given beat is. */
+
 void populate(void* data, Uint8* stream, int len) {
-	int i, n;
-	int activeInstruments;
-	long tempTotal;
+	int n;
+	int numActiveInstruments;
 	int tempVolume;
+	long tempTotal;
+	instrument* activeInstruments[NUM_INSTRUMENTS];
 	instrument* currentInstrument;
 	instrument* instruments = (instrument*)data;
-	for(i=0; i<len; i++) {
-		tempTotal = 0;
-		activeInstruments = 0;
-		/* Total up each instrument */
-		for(n=0; n<NUM_INSTRUMENTS; n++) {
-			currentInstrument = instruments + n;
-			if (currentInstrument->position > 0) {
-				/* This one is currently making sound */
-				if ((float)currentInstrument->position / currentInstrument->duration < 0.25) {
-					/* In the first quarter, fading in */
-					tempVolume = (((float)currentInstrument->position / currentInstrument->duration) * 4) * currentInstrument->volume;
-				} else if ((float)currentInstrument->position / currentInstrument->duration > 0.75) {
-					/* Last quarter, fading out */
-					tempVolume = ((1 - ((float)currentInstrument->position / currentInstrument->duration)) * 4) * currentInstrument->volume;
-				} else {
-					/* Anywhere else, full volume */
-					tempVolume = currentInstrument->volume;
-				}
-				tempTotal += tempVolume * sinf(currentInstrument->freqRate * currentInstrument->position);
-				activeInstruments++;
-			}
-			currentInstrument->position++;
 
-			if (currentInstrument->position >= currentInstrument->duration) {
-				generateTone(currentInstrument);
+	/* Figure out the active instruments this beat */
+	numActiveInstruments = 0;
+	for(n=0; n<NUM_INSTRUMENTS; n++) {
+		if (isActive(instruments + n)) {
+			if (DEBUG) {
+				puts("This is an Active Instrument");
 			}
+			activeInstruments[numActiveInstruments] = instruments+n;
+			numActiveInstruments++;
 		}
-		/* Take the average of the active instruments */
-		if (activeInstruments > 0) {
-			stream[i] = (Uint8) ((tempTotal / activeInstruments) + 127);
+	}
+
+	for (; len>0; len--) {
+		tempTotal = 0;
+		for (n=0; n<numActiveInstruments; n++) {
+			currentInstrument = activeInstruments[n];
+			tempTotal += currentVolume(currentInstrument, beat_position, beat_length) * sinf(currentInstrument->freqRate * currentInstrument->position);
+			currentInstrument->position++;
+			currentInstrument->position %= currentInstrument->period;
+		}
+		if (numActiveInstruments > 0) {
+			*stream = (Uint8) ((tempTotal / numActiveInstruments) + 127);
 		} else {
-			stream[i] = 127;
+			*stream = 127;
+		}
+		stream++;
+
+		beat_position++;
+		if (beat_position > beat_length) {
+			/* This is the next beat */
+			nextBeat(instruments);
+			numActiveInstruments = 0;
+			for (n=0; n<NUM_INSTRUMENTS; n++) {
+				currentInstrument = instruments + n;
+				if (isFinished(currentInstrument)) {
+					if (DEBUG) {
+						puts("This is a Finished Instrument");
+					}
+					generateTone(currentInstrument);
+				}
+				if (isActive(currentInstrument)) {
+					if (DEBUG) {
+						puts("This is an Active Instrument");
+					}
+					activeInstruments[numActiveInstruments] = currentInstrument;
+					numActiveInstruments++;
+				}
+			}
+			beat_position = 0;
 		}
 	}
 }
@@ -147,11 +241,12 @@ int main(int argc, char* argv[]) {
 		exit(1);
 	}
 	srandom(time());
+	beat_position = 0;
+	beat_length = FREQUENCY / (TEMPO / 60);
 
-	/* Set each instrument to be generated */
+	/* Generate Each Instrument */
 	for(i=0; i<NUM_INSTRUMENTS; i++) {
-		instruments[i].duration = 0;
-		instruments[i].position = 0;
+		generateTone(instruments + i);
 	}
 
 	SDL_PauseAudio(0);
