@@ -238,7 +238,7 @@ int main(int argc, char* argv[]) {
 	}
 	srandom(time());
 	beat_position = 0;
-	beat_length = FREQUENCY / (TEMPO / 60);
+	beat_length = FREQUENCY / (TEMPO / 60.0);
 
 	/* Generate Each Instrument */
 	for(i=0; i<NUM_INSTRUMENTS; i++) {
