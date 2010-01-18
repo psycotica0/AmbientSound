@@ -215,6 +215,14 @@ void populate(void* data, Uint8* stream, int len) {
 					numActiveInstruments++;
 				}
 			}
+			if (numActiveInstruments == 0) {
+				/* In this case we're about to play silence. Lame! */
+				/* All we have to do is make one of the tones play now instead */
+				instruments->end_beat -= instruments->start_beat;
+				instruments->start_beat = 0;
+				activeInstruments[0] = instruments;
+				numActiveInstruments = 1;
+			}
 			beat_position = 0;
 		}
 	}
