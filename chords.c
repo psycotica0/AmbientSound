@@ -229,6 +229,15 @@ void help() {
 	puts("-t TEMPO Sets the tempo in beats per minute");
 }
 
+/* This function is called when we get an interrupt */
+void stop(int signal) {
+	/* Turn off the audio, clean up */
+	SDL_PauseAudio(1);
+	SDL_CloseAudio();
+
+	exit(1);
+}
+
 
 int main(int argc, char* argv[]) {
 	GlobalData data;
@@ -334,9 +343,6 @@ int main(int argc, char* argv[]) {
 
 
 	SDL_PauseAudio(0);
-	sleep(20);
-	SDL_PauseAudio(1);
-	SDL_CloseAudio();
-
-	return 0;
+	/* Sit here until we're terminated */
+	while(1);
 }
