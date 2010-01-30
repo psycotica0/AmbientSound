@@ -23,6 +23,11 @@
 #define MAX_VOLUME 127
 #define MIN_VOLUME 0
 
+/* This is a global flag to tell the program to wrap up */
+/* All notes should fade out, and when the beat is over, the program should exit */
+/* If this is set to -1, that means the next beat will be the last */
+int lastBeat;
+
 /* This structure represents a tone */
 typedef struct Tone {
 	char* name; /* This is a string name of the tone, like C# */
@@ -147,7 +152,7 @@ float currentVolume(Instrument* currentInstrument, long currentPos, long totalPo
 			puts("Fading In");
 		}
 		return fadeInVolume(currentPos, totalPos) * currentInstrument->volume;
-	} else if (currentInstrument->end_beat == 0) {
+	} else if (currentInstrument->end_beat == 0 || lastBeat == 1) {
 		/* We're ending this beat, should be fading out */
 		if (DEBUG) {
 			puts("Fading Out");
@@ -192,6 +197,17 @@ void populate(void* data, Uint8* stream, int len) {
 
 		(globalData->beat_position)++;
 		if (globalData->beat_position > globalData->beat_length) {
+			if (lastBeat == 1) {
+				/* We're done */
+				/* Turn off the audio, clean up */
+				SDL_PauseAudio(1);
+				SDL_CloseAudio();
+
+				exit(0);
+			} else if (lastBeat == -1) {
+				/* This is the last beat */
+				lastBeat = 1;
+			}
 			/* This is the next beat */
 			nextBeat(&(globalData->instruments));
 			numActiveInstruments = 0;
@@ -231,11 +247,7 @@ void help() {
 
 /* This function is called when we get an interrupt */
 void stop(int signal) {
-	/* Turn off the audio, clean up */
-	SDL_PauseAudio(1);
-	SDL_CloseAudio();
-
-	exit(1);
+	lastBeat = -1;
 }
 
 
@@ -245,6 +257,10 @@ int main(int argc, char* argv[]) {
 	SDL_AudioSpec spec;
 	char flag;
 	int tempo = DEFAULT_TEMPO;
+
+	lastBeat=0;
+
+	signal(SIGINT, &stop);
 
 	spec.freq = FREQUENCY;
 	spec.format = AUDIO_U8;
