@@ -3,15 +3,16 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h>
 
 #define FREQUENCY 44100
 #define SAMPLES 8192
 
 #define DEBUG 0
 
-#define NUM_INSTRUMENTS 3
+#define DEFAULT_NUM_INSTRUMENTS 5
 /* This is the number of beats every minute */
-#define TEMPO 60
+#define DEFAULT_TEMPO 30
 
 /* All positions and durations are in term of beats */
 #define LOWER_START_BEAT 0
@@ -162,9 +163,9 @@ void populate(void* data, Uint8* stream, int len) {
 	int numActiveInstruments;
 	int tempVolume;
 	long tempTotal;
-	Instrument* activeInstruments[NUM_INSTRUMENTS];
-	Instrument* currentInstrument;
 	GlobalData* globalData = (GlobalData*)data;
+	Instrument* activeInstruments[globalData->instruments.num];
+	Instrument* currentInstrument;
 
 	/* Figure out the active instruments this beat */
 	numActiveInstruments = 0;
@@ -223,12 +224,18 @@ void populate(void* data, Uint8* stream, int len) {
 	}
 }
 
+void help() {
+	puts("-n NUM   Sets the number of instruments");
+	puts("-t TEMPO Sets the tempo in beats per minute");
+}
 
 
 int main(int argc, char* argv[]) {
 	GlobalData data;
 	int i;
 	SDL_AudioSpec spec;
+	char flag;
+	int tempo = DEFAULT_TEMPO;
 
 	spec.freq = FREQUENCY;
 	spec.format = AUDIO_U8;
@@ -237,11 +244,40 @@ int main(int argc, char* argv[]) {
 	spec.callback = (*populate);
 	spec.userdata = (&data);
 
+	data.instruments.num = DEFAULT_NUM_INSTRUMENTS;
+
+	while ((flag = getopt(argc, argv, "ht:n:")) != -1) {
+		switch (flag) {
+			case 't':
+				tempo = strtol(optarg, NULL, 10);
+				break;
+			case 'n':
+				data.instruments.num = strtol(optarg, NULL, 10);
+				break;
+			case 'h':
+			case '?':
+			default:
+				help();
+				return 0;
+				break;
+		}
+	}
+
+	if (tempo <= 0) {
+		fputs("Tempo must be a postitive integer\n", stderr);
+		return 1;
+	}
+
+	if (data.instruments.num <= 0) {
+		fputs("There must be at least one instrument\n", stderr);
+		return 1;
+	}
+
 	if (SDL_OpenAudio(&spec, NULL) < 0) {
 		fprintf(stderr, "Failed to open audio: %s\n", SDL_GetError());
 		exit(1);
 	}
-	srandom(time());
+	srandom(time(NULL));
 
 	/* Generate all the tones */
 	data.tones.num = 37;
@@ -285,7 +321,6 @@ int main(int argc, char* argv[]) {
 	genTone(data.tones.tone + 36, 523.25, "C5");
 
 	/* Generate all the instruments */
-	data.instruments.num = NUM_INSTRUMENTS;
 	data.instruments.instrument = malloc(sizeof(Instrument) * data.instruments.num);
 	/* Generate Each Instrument */
 	for(i=0; i<data.instruments.num; i++) {
@@ -295,7 +330,7 @@ int main(int argc, char* argv[]) {
 	/* Set myself to the beginnning of the beat */
 	data.beat_position = 0;
 	/* Compute the length of a beat at this tempo */
-	data.beat_length = FREQUENCY / (TEMPO / 60.0);
+	data.beat_length = FREQUENCY / (tempo / 60.0);
 
 
 	SDL_PauseAudio(0);
