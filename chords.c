@@ -192,7 +192,7 @@ void populate(void* data, Uint8* stream, int len) {
 			currentInstrument->position++;
 			currentInstrument->position %= currentInstrument->tone->period;
 		}
-		*stream = (Uint8) (tempTotal + 127);
+		*stream = (Sint8) (tempTotal);
 		stream++;
 
 		(globalData->beat_position)++;
@@ -263,7 +263,7 @@ int main(int argc, char* argv[]) {
 	signal(SIGINT, &stop);
 
 	spec.freq = FREQUENCY;
-	spec.format = AUDIO_U8;
+	spec.format = AUDIO_S8;
 	spec.channels = 1;
 	spec.samples = SAMPLES;
 	spec.callback = (*populate);
