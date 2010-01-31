@@ -1,0 +1,56 @@
+I'm going to use a series of probability arrays to make the probability of a given note given the other notes that will be played during its duration.
+
+Each octave is 12 notes long. We currently have 3 of them.
+Each tone has the same probability of coming up as the equivalent tone in another octave, accept the note we are talking about.
+The same note should note be played by more than one instrument.
+
+The probability will be generated from a normalized array, shifted by the value of the note in question.
+The normalized probability array might go like this:
+
+01 00
+02 01
+03 01
+04 03
+05 04
+06 04
+07 03
+08 04
+09 03
+10 03
+11 03
+12 01
+-- --
+13 05
+14 01
+15 01
+16 03
+17 04
+18 04
+19 03
+20 04
+21 03
+22 03
+23 03
+24 01
+-- --
+25 05
+26 01
+27 01
+28 03
+29 04
+30 04
+31 04
+32 03
+33 03
+34 03
+35 03
+36 01
+
+So, if this were bottom C, then this is the probability distribution.
+If, though, it were second E, then the whole list would be rotated by 16.
+
+Then, when more notes are playing at once the probability arrays are multiplied together item to item to form the probability matrix for the 'chord'.
+
+To find which note to play, generate a number between 1 and the total of all probabilities.
+Then, go through the list, subtracting the value at each point from the generated number.
+Once this new value is less than or equal to 0, that note is the next to play.

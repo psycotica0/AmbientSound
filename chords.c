@@ -78,6 +78,8 @@ typedef struct GlobalData {
 	int lastShowcased; /* This is the last tone showcased */
 } GlobalData;
 
+int isActiveDuringInterval(Instrument*, int, int);
+
 /* This function is called to exit from the program */
 void cleanExit() {
 	/* Turn off the audio, clean up */
@@ -152,6 +154,123 @@ void genTone(Tone* tone, float freq, char* name, void (*toneFunc)(Tone*)) {
 	toneFunc(tone);
 }
 
+/* This function multiplies a note's probability array by the given array */
+void multiplyProbability(int* currentArray, int arraySize, int noteToAdd) {
+	int i;
+	/* For a discussion of how this works, see the file toneProbability */
+	static const int probArray[36] = {
+		0,
+		1,
+		1,
+		3,
+		4,
+		4,
+		3,
+		4,
+		3,
+		3,
+		3,
+		1,
+		5,
+		1,
+		1,
+		3,
+		4,
+		4,
+		3,
+		4,
+		3,
+		3,
+		3,
+		1,
+		5,
+		1,
+		1,
+		3,
+		4,
+		4,
+		4,
+		3,
+		3,
+		3,
+		3,
+		1,
+	};
+	for (i=0; i<arraySize; i++) {
+		currentArray[(noteToAdd + i)%arraySize] *= probArray[i];
+	}
+}
+
+/* This function uses the probability functions to choose a note to play for the given period */
+int pickANote(GlobalData* globalData, Instrument* instrumentToPickNoteFor) {
+	Instrument* activeInstrument[globalData->instruments.num];
+	Instrument* currentInstrument;
+	int totalArray;
+	int randomNumber;
+	int n;
+	int probArray[36] = {
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+		1,
+	};
+	/* Build up the probability matrix for the interval */
+	for (n=0; n < globalData->instruments.num; n++) {
+		currentInstrument = (globalData->instruments.instrument + n);
+		if ((currentInstrument != instrumentToPickNoteFor) && isActiveDuringInterval(currentInstrument, instrumentToPickNoteFor->start_beat, instrumentToPickNoteFor->end_beat)) {
+			/* Figure out the number of this instrument and affect the prob matrix with it */
+			multiplyProbability(probArray, 36, currentInstrument->tone - globalData->tones.tone);
+		}
+	}
+	/* Find the total probability of the matrix */
+	totalArray = 0;
+	for (n=0; n < 36; n++) {
+		totalArray += probArray[n];
+	}
+	/* Pick a number between 1 and the total of the probability matrix */
+	randomNumber = (random() % (totalArray-1)) + 1;
+	/* Now go through each item in the prob array subtracting its value from randomNumber */
+	/* When randomNumber <= 0, that's the note we'll choose */
+	for (n=0; n < 36; n++) {
+		randomNumber -= probArray[n];
+		if (randomNumber <= 0) {
+			return n;
+		}
+	}
+}
+
 /* This function takes in the current instrument and makes the next tone for it to play */
 void nextNote(GlobalData* globalData, Instrument* currentInstrument) {
 	if (globalData->showcase) {
@@ -160,9 +279,9 @@ void nextNote(GlobalData* globalData, Instrument* currentInstrument) {
 		currentInstrument->end_beat = 1;
 		globalData->lastShowcased = (globalData->lastShowcased + 1) % globalData->tones.num;
 	} else {
-		currentInstrument->tone = globalData->tones.tone + (random() % globalData->tones.num);
 		currentInstrument->start_beat = (random() % (UPPER_START_BEAT - LOWER_START_BEAT)) + LOWER_START_BEAT;
 		currentInstrument->end_beat = currentInstrument->start_beat + (random() % (UPPER_DURATION - LOWER_DURATION)) + LOWER_DURATION;
+		currentInstrument->tone = globalData->tones.tone + pickANote(globalData, currentInstrument);
 	}
 	currentInstrument->volume = MAX_VOLUME;
 	currentInstrument->position = 0;
@@ -170,6 +289,15 @@ void nextNote(GlobalData* globalData, Instrument* currentInstrument) {
 	if (DEBUG) {
 		printf("Generated Instrument:\nnote: %s\nfreq: %f\nstart_beat: %d\nend_beat: %d\n", currentInstrument->tone->name, currentInstrument->tone->freq, currentInstrument->start_beat, currentInstrument->end_beat);
 	}
+}
+
+/* This function initializes an instrument to one beat of A 440 */
+void initializeInstrument(GlobalData* globalData, Instrument* currentInstrument) {
+	currentInstrument->tone = globalData->tones.tone + 33;
+	currentInstrument->start_beat = 0;
+	currentInstrument->end_beat = 1;
+	currentInstrument->volume = MAX_VOLUME;
+	currentInstrument->position = 0;
 }
 
 /* This function goes through the list of instruments and moves each one closer to now */
@@ -186,9 +314,13 @@ void nextBeat(Instruments* instruments) {
 	}
 }
 
-/* This function returns whether or not an instrument is active (Making a sound this beat) */
+/* This function returns whether or not an instrument is active during a given interval */
+int isActiveDuringInterval(Instrument* instr, int start_beat, int end_beat) {
+	return (instr->start_beat <=start_beat && instr->end_beat>=start_beat) || ( start_beat<=instr->start_beat && end_beat>=instr->start_beat);
+}
+/* This is a shortcut that returns whether or not an instrument is active this beat */
 int isActive(Instrument* instr) {
-	return (instr->start_beat <=0 && instr->end_beat>=0);
+	return isActiveDuringInterval(instr, 0, 0);
 }
 
 /* This function returns whether or not an instrument is finished playing */
@@ -458,9 +590,11 @@ int main(int argc, char* argv[]) {
 
 	/* Generate all the instruments */
 	data.instruments.instrument = malloc(sizeof(Instrument) * data.instruments.num);
-	/* Generate Each Instrument */
+	/* Initialize Each Instrument */
 	for(i=0; i<data.instruments.num; i++) {
-		nextNote(&data, data.instruments.instrument + i);
+		initializeInstrument(&data, data.instruments.instrument + i);
+		/* Stagger the endings */
+		(data.instruments.instrument+i)->end_beat = i+1;
 		if (data.log) {
 			/* Log each instrument's label */
 			printf("%d,",i);
