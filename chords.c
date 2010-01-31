@@ -76,6 +76,15 @@ typedef struct GlobalData {
 	int log; /* If this is true, log to stdout, in CSV format, all the sound data */
 } GlobalData;
 
+/* This function is called to exit from the program */
+void cleanExit() {
+	/* Turn off the audio, clean up */
+	SDL_PauseAudio(1);
+	SDL_CloseAudio();
+
+	exit(0);
+}
+
 float freqToFreqRate(float freq) {
 	return ((2 * M_PI * freq) / FREQUENCY);
 }
@@ -164,99 +173,86 @@ float currentVolume(Instrument* currentInstrument, long currentPos, long totalPo
 	}
 }
 
-void populate(void* data, Uint8* stream, int len) {
+/* This function mixes the num instruments values and volumes and returns an int that is their mixed value */
+Sint8 mixInstruments(int* volumes, float* values, int num) {
+	int totalVolume=0;
+	Sint8 mixedTotal=0;
 	int n;
-	int numActiveInstruments;
-	int instrumentValue;
-	long tempTotal;
-	/* This will store the last instrument logged if logging is on */
-	int lastLogged;
-	GlobalData* globalData = (GlobalData*)data;
-	Instrument* activeInstruments[globalData->instruments.num];
-	Instrument* currentInstrument;
 
-	/* Figure out the active instruments this beat */
-	numActiveInstruments = 0;
-	for(n=0; n < globalData->instruments.num; n++) {
-		if (isActive(globalData->instruments.instrument + n)) {
-			if (DEBUG) {
-				puts("This is an Active Instrument");
-			}
-			activeInstruments[numActiveInstruments] = globalData->instruments.instrument + n;
-			numActiveInstruments++;
-		}
+	/* First find the total of the volumes */
+	for(n=0; n<num; n++) {
+		totalVolume += volumes[n];
 	}
+	/* Don't adjust up. If total is less than 127, don't adjust volumes */
+	if (totalVolume < 127) {
+		totalVolume = 127;
+	}
+	/* Then sum the adjusted volumes to the values */
+	for(n=0; n<num; n++) {
+		mixedTotal += (127.0 / totalVolume) * volumes[n] * values[n];
+	}
+	return mixedTotal;
+}
+
+void populate(void* data, Uint8* stream, int len) {
+	GlobalData* globalData = (GlobalData*)data;
+	Instrument* currentInstrument;
+	int instrumentVolume[globalData->instruments.num];
+	float instrumentValue[globalData->instruments.num];
+	int n;
 
 	for (; len>0; len--) {
-		tempTotal = 0;
-		lastLogged = 0;
-		for (n=0; n<numActiveInstruments; n++) {
-			currentInstrument = activeInstruments[n];
-			instrumentValue = currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length) * (currentInstrument->tone->sample[currentInstrument->position]);
-			if (globalData->log) {
-				/* First, print out a 0 for each bit of data that isn't active between this instrument and the last */
-				for (; currentInstrument != (globalData->instruments.instrument + lastLogged); lastLogged++) {
-					printf("0,");
-				}
-				/* Then print out the value of this instrument */
-				printf("%d,",(Sint8)instrumentValue);
-				/* We've logged this one now */
-				lastLogged++;
+		for (n=0; n < globalData->instruments.num; n++) {
+			currentInstrument = globalData->instruments.instrument + n;
+			if (isActive(currentInstrument)) {
+				instrumentVolume[n] = currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length);
+				instrumentValue[n] =  currentInstrument->tone->sample[currentInstrument->position];
+				/* Now, move up the position of the instrument, bounded by the period of its tone */
+				currentInstrument->position = (currentInstrument->position + 1) % (currentInstrument->tone->period);
+			} else {
+				instrumentVolume[n] = 0;
+				instrumentValue[n] = 0;
 			}
-			tempTotal += instrumentValue / numActiveInstruments;
-			currentInstrument->position++;
-			currentInstrument->position %= currentInstrument->tone->period;
 		}
-		if (globalData->log) {
-			/* Print out 0 for all inactive instruments since the last one we printed out */
-			for (; lastLogged < globalData->instruments.num; lastLogged++) {
-				printf("0,");
-			}
-			/* Print out the total */
-			printf("%d\n", (Sint8)(tempTotal));
-		}
-		*stream = (Sint8) (tempTotal);
+		*stream = mixInstruments(instrumentVolume, instrumentValue, globalData->instruments.num);
 		stream++;
 
 		(globalData->beat_position)++;
 		if (globalData->beat_position > globalData->beat_length) {
 			if (lastBeat == 1) {
 				/* We're done */
-				/* Turn off the audio, clean up */
-				SDL_PauseAudio(1);
-				SDL_CloseAudio();
-
-				exit(0);
+				cleanExit();
 			} else if (lastBeat == -1) {
 				/* This is the last beat */
 				lastBeat = 1;
 			}
 			/* This is the next beat */
 			nextBeat(&(globalData->instruments));
-			numActiveInstruments = 0;
-			for (n=0; n < globalData->instruments.num; n++) {
-				currentInstrument = globalData->instruments.instrument + n;
-				if (isFinished(currentInstrument)) {
-					if (DEBUG) {
-						puts("This is a Finished Instrument");
+			{
+				/* This temporarily stores the number of active instruments in the next beat */
+				/* It's used to make sure there aren't periods of silence */
+				int numActiveInstruments = 0;
+				for (n=0; n < globalData->instruments.num; n++) {
+					currentInstrument = globalData->instruments.instrument + n;
+					if (isFinished(currentInstrument)) {
+						if (DEBUG) {
+							puts("This is a Finished Instrument");
+						}
+						nextNote(currentInstrument, &(globalData->tones));
 					}
-					nextNote(currentInstrument, &(globalData->tones));
-				}
-				if (isActive(currentInstrument)) {
-					if (DEBUG) {
-						puts("This is an Active Instrument");
+					if (isActive(currentInstrument)) {
+						if (DEBUG) {
+							puts("This is an Active Instrument");
+						}
+						numActiveInstruments++;
 					}
-					activeInstruments[numActiveInstruments] = currentInstrument;
-					numActiveInstruments++;
 				}
-			}
-			if (numActiveInstruments == 0) {
-				/* In this case we're about to play silence. Lame! */
-				/* All we have to do is make one of the tones play now instead */
-				globalData->instruments.instrument->end_beat -= globalData->instruments.instrument->start_beat;
-				globalData->instruments.instrument->start_beat = 0;
-				activeInstruments[0] = globalData->instruments.instrument;
-				numActiveInstruments = 1;
+				if (numActiveInstruments == 0) {
+					/* In this case we're about to play silence. Lame! */
+					/* All we have to do is make one of the tones play now instead */
+					globalData->instruments.instrument->end_beat -= globalData->instruments.instrument->start_beat;
+					globalData->instruments.instrument->start_beat = 0;
+				}
 			}
 			globalData->beat_position = 0;
 		}
