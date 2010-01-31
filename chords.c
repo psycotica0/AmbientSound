@@ -95,19 +95,61 @@ float freqToPeriod(float freq) {
 	return (FREQUENCY / freq);
 }
 
-/* This function computes the data for a given tone */
-void genTone(Tone* tone, float freq, char* name) {
+/* This function populates the samples array with a sinusoidal waveform */
+void sineWave(Tone* tone) {
 	int i;
-	float freqRate = freqToFreqRate(freq);
+	float freqRate = freqToFreqRate(tone->freq);
 
+	for (i=0; i<=tone->period; i++) {
+		tone->sample[i] = sinf(i * freqRate);
+	}
+}
+
+/* This function populates the samples array with a trianglular waveform */
+void triangleWave(Tone* tone) {
+	int i;
+	float freqRate = 1.0 / (2.0 * tone->period);
+
+	for (i=0; i <= (tone->period / 2); i++) {
+		/* Symmetry! */
+		tone->sample[i] = tone->sample[tone->period - i] = i * freqRate;
+	}
+}
+
+/* This function populates the samples with a square wave */
+void squareWave(Tone* tone) {
+	int i;
+
+	for(i=0; i<= (tone->period/4); i++) {
+		/* Either side of the square */
+		tone->sample[i] = tone->sample[tone->period -1] = 0;
+	}
+	for(; i <= 3 * (tone->period/4); i++) {
+		/* Centre of the square */
+		tone->sample[i] = 1;
+	}
+}
+
+/* This function populates the samples with a sawtooth wave */
+void sawtoothWave(Tone* tone) {
+	int i;
+	float freqRate = 1.0 / (2.0 * tone->period);
+
+	for (i=0; i <= (tone->period / 2); i++) {
+		tone->sample[i] =  i * freqRate;
+		tone->sample[tone->period - i] = 0;
+	}
+}
+
+
+/* This function computes the data for a given tone */
+void genTone(Tone* tone, float freq, char* name, void (*toneFunc)(Tone*)) {
 	tone->freq = freq;
 	tone->name = name;
 	tone->period = freqToPeriod(freq);
 
 	tone->sample = malloc(sizeof(float) * tone->period);
-	for (i=0; i<=tone->period; i++) {
-		tone->sample[i] = sinf(i * freqRate);
-	}
+	toneFunc(tone);
 }
 
 /* This function takes in the current instrument and makes the next tone for it to play */
@@ -279,6 +321,8 @@ void populate(void* data, Uint8* stream, int len) {
 void help() {
 	puts("-n NUM   Sets the number of instruments");
 	puts("-t TEMPO Sets the tempo in beats per minute");
+	puts("-w TYPE  Sets the waveform of the notes to TYPE");
+	puts("         Accepted Types are: sine, triangle, square, sawtooth");
 	puts("-l       If this is set, then log all sound data in CSV format to stdout");
 	puts("-s       If this flag is set then the app goes into showcase mode where one instrument goes through all the tones in order");
 }
@@ -295,6 +339,7 @@ int main(int argc, char* argv[]) {
 	SDL_AudioSpec spec;
 	char flag;
 	int tempo = DEFAULT_TEMPO;
+	void (*waveform)(Tone*) = &sineWave;
 
 	data.log = 0;
 	data.showcase = 0;
@@ -312,7 +357,7 @@ int main(int argc, char* argv[]) {
 
 	data.instruments.num = DEFAULT_NUM_INSTRUMENTS;
 
-	while ((flag = getopt(argc, argv, "slht:n:")) != -1) {
+	while ((flag = getopt(argc, argv, "slht:n:w:")) != -1) {
 		switch (flag) {
 			case 't':
 				tempo = strtol(optarg, NULL, 10);
@@ -326,6 +371,20 @@ int main(int argc, char* argv[]) {
 			case 's':
 				data.showcase = 1;
 				data.instruments.num = 1;
+				break;
+			case 'w':
+				if (strcmp(optarg, "sine") == 0) {
+					waveform = &sineWave;
+				} else if (strcmp(optarg, "triangle") == 0) {
+					waveform = &triangleWave;
+				} else if (strcmp(optarg, "square") == 0) {
+					waveform = &squareWave;
+				} else if (strcmp(optarg, "sawtooth") == 0) {
+					waveform = &sawtoothWave;
+				} else {
+					printf("Unrecognized Waveform: %s\n", optarg);
+					return 1;
+				}
 				break;
 			case 'h':
 			case '?':
@@ -355,43 +414,43 @@ int main(int argc, char* argv[]) {
 	/* Generate all the tones */
 	data.tones.num = 37;
 	data.tones.tone = malloc(sizeof(Tone) * data.tones.num);
-	genTone(data.tones.tone + 0, 65.41, "C2");
-	genTone(data.tones.tone + 1, 69.30, "C#2/Db2");
-	genTone(data.tones.tone + 2, 73.42, "D2");
-	genTone(data.tones.tone + 3, 77.78, "D#2/Eb2");
-	genTone(data.tones.tone + 4, 82.41, "E2");
-	genTone(data.tones.tone + 5, 87.31, "F2");
-	genTone(data.tones.tone + 6, 92.50, "F#2/Gb2");
-	genTone(data.tones.tone + 7, 98.00, "G2");
-	genTone(data.tones.tone + 8, 103.83, "G#2/Ab2");
-	genTone(data.tones.tone + 9, 110.00, "A2");
-	genTone(data.tones.tone + 10, 116.54, "A#2/Bb2");
-	genTone(data.tones.tone + 11, 123.47, "B2");
-	genTone(data.tones.tone + 12, 130.81, "C3");
-	genTone(data.tones.tone + 13, 138.59, "C#3/Db3");
-	genTone(data.tones.tone + 14, 146.83, "D3");
-	genTone(data.tones.tone + 15, 155.56, "D#3/Eb3");
-	genTone(data.tones.tone + 16, 164.81, "E3");
-	genTone(data.tones.tone + 17, 174.61, "F3");
-	genTone(data.tones.tone + 18, 185.00, "F#3/Gb3");
-	genTone(data.tones.tone + 19, 196.00, "G3");
-	genTone(data.tones.tone + 20, 207.65, "G#3/Ab3");
-	genTone(data.tones.tone + 21, 220.00, "A3");
-	genTone(data.tones.tone + 22, 233.08, "A#3/Bb3");
-	genTone(data.tones.tone + 23, 246.94, "B3");
-	genTone(data.tones.tone + 24, 261.63, "C4");
-	genTone(data.tones.tone + 25, 277.18, "C#4/Db4");
-	genTone(data.tones.tone + 26, 293.66, "D4");
-	genTone(data.tones.tone + 27, 311.13, "D#4/Eb4");
-	genTone(data.tones.tone + 28, 329.63, "E4");
-	genTone(data.tones.tone + 29, 349.23, "F4");
-	genTone(data.tones.tone + 30, 369.99, "F#4/Gb4");
-	genTone(data.tones.tone + 31, 392.00, "G4");
-	genTone(data.tones.tone + 32, 415.30, "G#4/Ab4");
-	genTone(data.tones.tone + 33, 440.00, "A4");
-	genTone(data.tones.tone + 34, 466.16, "A#4/Bb4");
-	genTone(data.tones.tone + 35, 493.88, "B4");
-	genTone(data.tones.tone + 36, 523.25, "C5");
+	genTone(data.tones.tone + 0, 65.41, "C2", waveform);
+	genTone(data.tones.tone + 1, 69.30, "C#2/Db2", waveform);
+	genTone(data.tones.tone + 2, 73.42, "D2", waveform);
+	genTone(data.tones.tone + 3, 77.78, "D#2/Eb2", waveform);
+	genTone(data.tones.tone + 4, 82.41, "E2", waveform);
+	genTone(data.tones.tone + 5, 87.31, "F2", waveform);
+	genTone(data.tones.tone + 6, 92.50, "F#2/Gb2", waveform);
+	genTone(data.tones.tone + 7, 98.00, "G2", waveform);
+	genTone(data.tones.tone + 8, 103.83, "G#2/Ab2", waveform);
+	genTone(data.tones.tone + 9, 110.00, "A2", waveform);
+	genTone(data.tones.tone + 10, 116.54, "A#2/Bb2", waveform);
+	genTone(data.tones.tone + 11, 123.47, "B2", waveform);
+	genTone(data.tones.tone + 12, 130.81, "C3", waveform);
+	genTone(data.tones.tone + 13, 138.59, "C#3/Db3", waveform);
+	genTone(data.tones.tone + 14, 146.83, "D3", waveform);
+	genTone(data.tones.tone + 15, 155.56, "D#3/Eb3", waveform);
+	genTone(data.tones.tone + 16, 164.81, "E3", waveform);
+	genTone(data.tones.tone + 17, 174.61, "F3", waveform);
+	genTone(data.tones.tone + 18, 185.00, "F#3/Gb3", waveform);
+	genTone(data.tones.tone + 19, 196.00, "G3", waveform);
+	genTone(data.tones.tone + 20, 207.65, "G#3/Ab3", waveform);
+	genTone(data.tones.tone + 21, 220.00, "A3", waveform);
+	genTone(data.tones.tone + 22, 233.08, "A#3/Bb3", waveform);
+	genTone(data.tones.tone + 23, 246.94, "B3", waveform);
+	genTone(data.tones.tone + 24, 261.63, "C4", waveform);
+	genTone(data.tones.tone + 25, 277.18, "C#4/Db4", waveform);
+	genTone(data.tones.tone + 26, 293.66, "D4", waveform);
+	genTone(data.tones.tone + 27, 311.13, "D#4/Eb4", waveform);
+	genTone(data.tones.tone + 28, 329.63, "E4", waveform);
+	genTone(data.tones.tone + 29, 349.23, "F4", waveform);
+	genTone(data.tones.tone + 30, 369.99, "F#4/Gb4", waveform);
+	genTone(data.tones.tone + 31, 392.00, "G4", waveform);
+	genTone(data.tones.tone + 32, 415.30, "G#4/Ab4", waveform);
+	genTone(data.tones.tone + 33, 440.00, "A4", waveform);
+	genTone(data.tones.tone + 34, 466.16, "A#4/Bb4", waveform);
+	genTone(data.tones.tone + 35, 493.88, "B4", waveform);
+	genTone(data.tones.tone + 36, 523.25, "C5", waveform);
 
 	/* Generate all the instruments */
 	data.instruments.instrument = malloc(sizeof(Instrument) * data.instruments.num);
