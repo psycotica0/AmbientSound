@@ -212,7 +212,12 @@ float currentVolume(Instrument* currentInstrument, long currentPos, long totalPo
 		if (DEBUG) {
 			puts("Fading In");
 		}
-		return fadeInVolume(currentPos, totalPos) * currentInstrument->volume;
+		if (lastBeat == 1) {
+			/* This is the last beat, don't bother coming in */
+			return 0;
+		} else {
+			return fadeInVolume(currentPos, totalPos) * currentInstrument->volume;
+		}
 	} else if (currentInstrument->end_beat == 0 || lastBeat == 1) {
 		/* We're ending this beat, should be fading out */
 		if (DEBUG) {
