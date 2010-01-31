@@ -417,7 +417,7 @@ int main(int argc, char* argv[]) {
 	srandom(time(NULL));
 
 	/* Generate all the tones */
-	data.tones.num = 37;
+	data.tones.num = 36;
 	data.tones.tone = malloc(sizeof(Tone) * data.tones.num);
 	genTone(data.tones.tone + 0, 65.41, "C2", waveform);
 	genTone(data.tones.tone + 1, 69.30, "C#2/Db2", waveform);
@@ -455,7 +455,6 @@ int main(int argc, char* argv[]) {
 	genTone(data.tones.tone + 33, 440.00, "A4", waveform);
 	genTone(data.tones.tone + 34, 466.16, "A#4/Bb4", waveform);
 	genTone(data.tones.tone + 35, 493.88, "B4", waveform);
-	genTone(data.tones.tone + 36, 523.25, "C5", waveform);
 
 	/* Generate all the instruments */
 	data.instruments.instrument = malloc(sizeof(Instrument) * data.instruments.num);
