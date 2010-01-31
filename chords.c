@@ -73,6 +73,7 @@ typedef struct GlobalData {
 	Tones tones; /* This refrences all the tones those instruments can play. */
 	long beat_position; /* This is where in a beat we've played to thus far, measured in 'ticks'*/
 	long beat_length; /* This is how long each beat is, measured in 'ticks' */
+	int log; /* If this is true, log to stdout, in CSV format, all the sound data */
 } GlobalData;
 
 float freqToFreqRate(float freq) {
@@ -168,6 +169,8 @@ void populate(void* data, Uint8* stream, int len) {
 	int numActiveInstruments;
 	int tempVolume;
 	long tempTotal;
+	/* This will store the last instrument logged if logging is on */
+	int lastLogged;
 	GlobalData* globalData = (GlobalData*)data;
 	Instrument* activeInstruments[globalData->instruments.num];
 	Instrument* currentInstrument;
@@ -186,11 +189,30 @@ void populate(void* data, Uint8* stream, int len) {
 
 	for (; len>0; len--) {
 		tempTotal = 0;
+		lastLogged = 0;
 		for (n=0; n<numActiveInstruments; n++) {
 			currentInstrument = activeInstruments[n];
 			tempTotal += (currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length) / numActiveInstruments) * (currentInstrument->tone->sample[currentInstrument->position]);
+			if (globalData->log) {
+				/* First, print out a 0 for each bit of data that isn't active between this instrument and the last */
+				for (; currentInstrument != (globalData->instruments.instrument + lastLogged); lastLogged++) {
+					printf("0,");
+				}
+				/* Then print out the value of this instrument */
+				printf("%d,",(Sint8)(((currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length) / numActiveInstruments) * (currentInstrument->tone->sample[currentInstrument->position]))));
+				/* We've logged this one now */
+				lastLogged++;
+			}
 			currentInstrument->position++;
 			currentInstrument->position %= currentInstrument->tone->period;
+		}
+		if (globalData->log) {
+			/* Print out 0 for all inactive instruments since the last one we printed out */
+			for (; lastLogged < globalData->instruments.num; lastLogged++) {
+				printf("0,");
+			}
+			/* Print out the total */
+			printf("%d\n", (Sint8)(tempTotal));
 		}
 		*stream = (Sint8) (tempTotal);
 		stream++;
@@ -243,6 +265,7 @@ void populate(void* data, Uint8* stream, int len) {
 void help() {
 	puts("-n NUM   Sets the number of instruments");
 	puts("-t TEMPO Sets the tempo in beats per minute");
+	puts("-l       If this is set, then log all sound data in CSV format to stdout");
 }
 
 /* This function is called when we get an interrupt */
@@ -258,6 +281,7 @@ int main(int argc, char* argv[]) {
 	char flag;
 	int tempo = DEFAULT_TEMPO;
 
+	data.log = 0;
 	lastBeat=0;
 
 	signal(SIGINT, &stop);
@@ -271,13 +295,16 @@ int main(int argc, char* argv[]) {
 
 	data.instruments.num = DEFAULT_NUM_INSTRUMENTS;
 
-	while ((flag = getopt(argc, argv, "ht:n:")) != -1) {
+	while ((flag = getopt(argc, argv, "lht:n:")) != -1) {
 		switch (flag) {
 			case 't':
 				tempo = strtol(optarg, NULL, 10);
 				break;
 			case 'n':
 				data.instruments.num = strtol(optarg, NULL, 10);
+				break;
+			case 'l':
+				data.log = 1;
 				break;
 			case 'h':
 			case '?':
@@ -350,6 +377,14 @@ int main(int argc, char* argv[]) {
 	/* Generate Each Instrument */
 	for(i=0; i<data.instruments.num; i++) {
 		nextNote(data.instruments.instrument + i, &(data.tones));
+		if (data.log) {
+			/* Log each instrument's label */
+			printf("%d,",i);
+		}
+	}
+	if (data.log) {
+		/* And a column for the total */
+		puts("Total");
 	}
 
 	/* Set myself to the beginnning of the beat */
