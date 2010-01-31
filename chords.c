@@ -74,6 +74,8 @@ typedef struct GlobalData {
 	long beat_position; /* This is where in a beat we've played to thus far, measured in 'ticks'*/
 	long beat_length; /* This is how long each beat is, measured in 'ticks' */
 	int log; /* If this is true, log to stdout, in CSV format, all the sound data */
+	int showcase; /* If this is true, the instruments play each tone in order for two beats */
+	int lastShowcased; /* This is the last tone showcased */
 } GlobalData;
 
 /* This function is called to exit from the program */
@@ -109,10 +111,17 @@ void genTone(Tone* tone, float freq, char* name) {
 }
 
 /* This function takes in the current instrument and makes the next tone for it to play */
-void nextNote(Instrument* currentInstrument, Tones* tones) {
-	currentInstrument->tone = tones->tone + (random() % tones->num);
-	currentInstrument->start_beat = (random() % (UPPER_START_BEAT - LOWER_START_BEAT)) + LOWER_START_BEAT;
-	currentInstrument->end_beat = currentInstrument->start_beat + (random() % (UPPER_DURATION - LOWER_DURATION)) + LOWER_DURATION;
+void nextNote(GlobalData* globalData, Instrument* currentInstrument) {
+	if (globalData->showcase) {
+		currentInstrument->tone = globalData->tones.tone + globalData->lastShowcased;
+		currentInstrument->start_beat = 0;
+		currentInstrument->end_beat = 1;
+		globalData->lastShowcased = (globalData->lastShowcased + 1) % globalData->tones.num;
+	} else {
+		currentInstrument->tone = globalData->tones.tone + (random() % globalData->tones.num);
+		currentInstrument->start_beat = (random() % (UPPER_START_BEAT - LOWER_START_BEAT)) + LOWER_START_BEAT;
+		currentInstrument->end_beat = currentInstrument->start_beat + (random() % (UPPER_DURATION - LOWER_DURATION)) + LOWER_DURATION;
+	}
 	currentInstrument->volume = MAX_VOLUME;
 	currentInstrument->position = 0;
 
@@ -246,7 +255,7 @@ void populate(void* data, Uint8* stream, int len) {
 						if (DEBUG) {
 							puts("This is a Finished Instrument");
 						}
-						nextNote(currentInstrument, &(globalData->tones));
+						nextNote(globalData, currentInstrument);
 					}
 					if (isActive(currentInstrument)) {
 						if (DEBUG) {
@@ -271,6 +280,7 @@ void help() {
 	puts("-n NUM   Sets the number of instruments");
 	puts("-t TEMPO Sets the tempo in beats per minute");
 	puts("-l       If this is set, then log all sound data in CSV format to stdout");
+	puts("-s       If this flag is set then the app goes into showcase mode where one instrument goes through all the tones in order");
 }
 
 /* This function is called when we get an interrupt */
@@ -287,6 +297,8 @@ int main(int argc, char* argv[]) {
 	int tempo = DEFAULT_TEMPO;
 
 	data.log = 0;
+	data.showcase = 0;
+	data.lastShowcased = 0;
 	lastBeat=0;
 
 	signal(SIGINT, &stop);
@@ -300,7 +312,7 @@ int main(int argc, char* argv[]) {
 
 	data.instruments.num = DEFAULT_NUM_INSTRUMENTS;
 
-	while ((flag = getopt(argc, argv, "lht:n:")) != -1) {
+	while ((flag = getopt(argc, argv, "slht:n:")) != -1) {
 		switch (flag) {
 			case 't':
 				tempo = strtol(optarg, NULL, 10);
@@ -310,6 +322,10 @@ int main(int argc, char* argv[]) {
 				break;
 			case 'l':
 				data.log = 1;
+				break;
+			case 's':
+				data.showcase = 1;
+				data.instruments.num = 1;
 				break;
 			case 'h':
 			case '?':
@@ -381,7 +397,7 @@ int main(int argc, char* argv[]) {
 	data.instruments.instrument = malloc(sizeof(Instrument) * data.instruments.num);
 	/* Generate Each Instrument */
 	for(i=0; i<data.instruments.num; i++) {
-		nextNote(data.instruments.instrument + i, &(data.tones));
+		nextNote(&data, data.instruments.instrument + i);
 		if (data.log) {
 			/* Log each instrument's label */
 			printf("%d,",i);
