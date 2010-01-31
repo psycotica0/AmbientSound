@@ -174,9 +174,10 @@ float currentVolume(Instrument* currentInstrument, long currentPos, long totalPo
 }
 
 /* This function mixes the num instruments values and volumes and returns an int that is their mixed value */
-Sint8 mixInstruments(int* volumes, float* values, int num) {
+Sint8 mixInstruments(int* volumes, float* values, int num, int log) {
 	int totalVolume=0;
 	Sint8 mixedTotal=0;
+	int tempValue;
 	int n;
 
 	/* First find the total of the volumes */
@@ -189,7 +190,14 @@ Sint8 mixInstruments(int* volumes, float* values, int num) {
 	}
 	/* Then sum the adjusted volumes to the values */
 	for(n=0; n<num; n++) {
-		mixedTotal += (127.0 / totalVolume) * volumes[n] * values[n];
+		tempValue = (127.0 / totalVolume) * volumes[n] * values[n];
+		if (log) {
+			printf("%d,", tempValue);
+		}
+		mixedTotal += tempValue;
+	}
+	if (log) {
+		printf("%d\n", mixedTotal);
 	}
 	return mixedTotal;
 }
@@ -214,7 +222,7 @@ void populate(void* data, Uint8* stream, int len) {
 				instrumentValue[n] = 0;
 			}
 		}
-		*stream = mixInstruments(instrumentVolume, instrumentValue, globalData->instruments.num);
+		*stream = mixInstruments(instrumentVolume, instrumentValue, globalData->instruments.num, globalData->log);
 		stream++;
 
 		(globalData->beat_position)++;
