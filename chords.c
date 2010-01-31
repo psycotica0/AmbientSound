@@ -167,7 +167,7 @@ float currentVolume(Instrument* currentInstrument, long currentPos, long totalPo
 void populate(void* data, Uint8* stream, int len) {
 	int n;
 	int numActiveInstruments;
-	int tempVolume;
+	int instrumentValue;
 	long tempTotal;
 	/* This will store the last instrument logged if logging is on */
 	int lastLogged;
@@ -192,17 +192,18 @@ void populate(void* data, Uint8* stream, int len) {
 		lastLogged = 0;
 		for (n=0; n<numActiveInstruments; n++) {
 			currentInstrument = activeInstruments[n];
-			tempTotal += (currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length) / numActiveInstruments) * (currentInstrument->tone->sample[currentInstrument->position]);
+			instrumentValue = currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length) * (currentInstrument->tone->sample[currentInstrument->position]);
 			if (globalData->log) {
 				/* First, print out a 0 for each bit of data that isn't active between this instrument and the last */
 				for (; currentInstrument != (globalData->instruments.instrument + lastLogged); lastLogged++) {
 					printf("0,");
 				}
 				/* Then print out the value of this instrument */
-				printf("%d,",(Sint8)(((currentVolume(currentInstrument, globalData->beat_position, globalData->beat_length) / numActiveInstruments) * (currentInstrument->tone->sample[currentInstrument->position]))));
+				printf("%d,",(Sint8)instrumentValue);
 				/* We've logged this one now */
 				lastLogged++;
 			}
+			tempTotal += instrumentValue / numActiveInstruments;
 			currentInstrument->position++;
 			currentInstrument->position %= currentInstrument->tone->period;
 		}
