@@ -543,6 +543,9 @@ int main(int argc, char* argv[]) {
 		return 1;
 	}
 
+	/* Initialize The Audio */
+	/* The Video needs to be initialized here for events to work, which is dumb */
+	SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
 	if (SDL_OpenAudio(&spec, NULL) < 0) {
 		fprintf(stderr, "Failed to open audio: %s\n", SDL_GetError());
 		exit(1);
@@ -614,5 +617,19 @@ int main(int argc, char* argv[]) {
 
 	SDL_PauseAudio(0);
 	/* Sit here until we're terminated */
-	while(1);
+	{
+		SDL_Event event;
+		while (1) {
+			if (SDL_WaitEvent(&event) == 0) {
+				fprintf(stderr, "Event Error: %s", SDL_GetError());
+			}
+
+			switch (event.type) {
+				case SDL_QUIT:
+					lastBeat = -1;
+			}
+			SDL_Delay(1000);
+		}
+	}
+
 }
